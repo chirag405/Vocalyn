@@ -1,5 +1,9 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Project Setup and Configuration
+
+For detailed instructions on setting up your environment variables and configuring your Supabase project (including Google OAuth and database triggers), please refer to the **[Project Setup and Configuration Guide](SETUP_GUIDE.md)**.
+
 ## Getting Started
 
 First, run the development server:

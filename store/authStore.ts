@@ -16,7 +16,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const { data: { session } } = await supabase.auth.getSession()
       
       if (session?.user) {
-        await get().fetchUser()
+        set({ isAuthenticated: true }) // User has an active session
+        await get().fetchUser() // Fetch full profile, isAuthenticated remains true even if this fails
+      } else {
+        set({ user: null, isAuthenticated: false })
       }
     } catch (error) {
       console.error('Error initializing auth:', error)
@@ -27,7 +30,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // Listen for auth changes
     supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
-        await get().fetchUser()
+        set({ isAuthenticated: true, isLoading: true }) // User signed in, indicate loading for fetchUser
+        try {
+          await get().fetchUser() // Fetch full profile, isAuthenticated remains true even if this fails
+        } finally {
+          set({ isLoading: false })
+        }
       } else if (event === 'SIGNED_OUT') {
         set({ user: null, isAuthenticated: false })
       }
@@ -35,10 +43,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   fetchUser: async () => {
+    set({ isLoading: true })
     const supabase = createClient()
+    let authUserFromGetUse // To store authUser if needed in catch/finally
     
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser()
+      authUserFromGetUse = authUser // Store for later use
       
       if (!authUser) {
         set({ user: null, isAuthenticated: false })
@@ -52,8 +63,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         .single()
 
       if (error) {
-        console.error('Error fetching user data:', error.message)
-        set({ user: null, isAuthenticated: false })
+        console.error('Error fetching user data from "users" table:', error.message)
+        // If authUser exists, user is authenticated, but profile data from 'users' table might be missing.
+        // Set user to essential data from authUser and keep isAuthenticated true.
+        set({ 
+          user: { 
+            id: authUser.id, 
+            email: authUser.email, 
+            // You might want to add other essential fields from authUser if available
+            // and indicate that other profile information is missing.
+          } as User, // Cast to User, but acknowledge it's a partial representation
+          isAuthenticated: true 
+        })
         return
       }
 
@@ -62,8 +83,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isAuthenticated: true 
       })
     } catch (error) {
-      console.error('Error fetching user:', error)
-      set({ user: null, isAuthenticated: false })
+      console.error('Error in fetchUser:', error)
+      // If there's a general error and authUserFromGetUse was available (captured earlier),
+      // default to a state where the user is considered authenticated with basic info.
+      if (authUserFromGetUse) {
+        set({
+          user: {
+            id: authUserFromGetUse.id,
+            email: authUserFromGetUse.email,
+          } as User, // Cast to User, but acknowledge it's a partial representation
+          isAuthenticated: true,
+        })
+      } else {
+        set({ user: null, isAuthenticated: false })
+      }
+    } finally {
+      set({ isLoading: false })
     }
   },
 
@@ -87,6 +122,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       // User will be created in database via trigger
+      // IMPORTANT: Ensure you have a trigger set up in your Supabase database
+      // that creates a corresponding user profile in your public 'users' table
+      // whenever a new user signs up in 'auth.users'.
+      // This profile is fetched by fetchUser().
       return {}
     } catch (error) {
       console.error('Sign up error:', error)

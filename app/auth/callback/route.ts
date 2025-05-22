@@ -6,24 +6,22 @@ export async function GET(request: Request) {
   const code = searchParams.get('code')
   const next = searchParams.get('next') ?? '/dashboard'
   
+  // Determine the base URL for redirection.
+  // Prioritize NEXT_PUBLIC_APP_URL, fallback to request origin.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || origin
+
   if (code) {
     const supabase = await createClient()
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     
     if (!error) {
-      const forwardedHost = request.headers.get('x-forwarded-host')
-      const isLocalEnv = process.env.NODE_ENV === 'development'
-      
-      if (isLocalEnv) {
-        return NextResponse.redirect(`${origin}${next}`)
-      } else if (forwardedHost) {
-        return NextResponse.redirect(`https://${forwardedHost}${next}`)
-      } else {
-        return NextResponse.redirect(`${origin}${next}`)
-      }
+      // On successful code exchange, redirect to the 'next' path using the determined appUrl.
+      // Ensure 'next' path starts with a '/' to avoid malformed URLs.
+      const redirectPath = next.startsWith('/') ? next : `/${next}`
+      return NextResponse.redirect(`${appUrl}${redirectPath}`)
     }
   }
 
-  // Return the user to an error page with instructions
-  return NextResponse.redirect(`${origin}/auth/auth-code-error`)
+  // If no code, or if code exchange fails, redirect to an error page.
+  return NextResponse.redirect(`${appUrl}/auth/auth-code-error`)
 }
