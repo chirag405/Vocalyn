@@ -29,15 +29,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     // Listen for auth changes
     supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
-        set({ isAuthenticated: true, isLoading: true }) // User signed in, indicate loading for fetchUser
-        try {
-          await get().fetchUser() // Fetch full profile, isAuthenticated remains true even if this fails
-        } finally {
-          set({ isLoading: false })
+      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+        if (session?.user) {
+          set({ isAuthenticated: true, isLoading: true });
+          try {
+            await get().fetchUser(); // Fetch full profile, including email_confirmed_at
+          } finally {
+            set({ isLoading: false });
+          }
+        } else {
+          // This case might occur if USER_UPDATED happens but session somehow becomes invalid
+          set({ user: null, isAuthenticated: false, isLoading: false });
         }
       } else if (event === 'SIGNED_OUT') {
-        set({ user: null, isAuthenticated: false })
+        set({ user: null, isAuthenticated: false });
       }
     })
   },
@@ -62,40 +67,64 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         .eq('id', authUser.id)
         .single()
 
-      if (error) {
+      if (error) { // Error fetching from public.users table
         console.error('Error fetching user data from "users" table:', error.message)
         // If authUser exists, user is authenticated, but profile data from 'users' table might be missing.
         // Set user to essential data from authUser and keep isAuthenticated true.
-        set({ 
-          user: { 
-            id: authUser.id, 
-            email: authUser.email, 
-            // You might want to add other essential fields from authUser if available
-            // and indicate that other profile information is missing.
-          } as User, // Cast to User, but acknowledge it's a partial representation
-          isAuthenticated: true 
-        })
-        return
+        const partialUser: User = {
+          id: authUser.id,
+          email: authUser.email!, // email should be non-null if authUser exists
+          email_confirmed_at: authUser.email_confirmed_at,
+          auth_created_at: authUser.created_at,
+          auth_updated_at: authUser.updated_at,
+          // Initialize other fields from User type as undefined or with default values
+          // as they are missing from the 'users' table.
+          full_name: '', // Default or indicate missing
+          avatar_url: undefined,
+          // @ts-ignore - TODO: Define default enums or make them optional in User type
+          subscription_tier: undefined, 
+          // @ts-ignore
+          subscription_status: undefined,
+          created_at: '', // This would be public.users.created_at, which we couldn't fetch
+          updated_at: '', // This would be public.users.updated_at
+        };
+        set({ user: partialUser, isAuthenticated: true });
+        return;
       }
 
-      set({ 
-        user: userData as User, 
-        isAuthenticated: true 
-      })
+      // Combine authUser data with userData from public.users
+      const combinedUser: User = {
+        // Core auth fields from authUser
+        id: authUser.id,
+        email: authUser.email!, // email should be non-null if authUser exists
+        email_confirmed_at: authUser.email_confirmed_at,
+        auth_created_at: authUser.created_at,
+        auth_updated_at: authUser.updated_at,
+        
+        // Profile fields from userData (public.users)
+        // Cast userData to a partial User type to avoid conflicts with fields already set from authUser
+        ...(userData as Omit<User, 'id' | 'email' | 'email_confirmed_at' | 'auth_created_at' | 'auth_updated_at'>),
+      };
+      set({ user: combinedUser, isAuthenticated: true });
+
     } catch (error) {
       console.error('Error in fetchUser:', error)
       // If there's a general error and authUserFromGetUse was available (captured earlier),
-      // default to a state where the user is considered authenticated with basic info.
+      // default to a state where the user is considered authenticated with basic info from authUser.
       if (authUserFromGetUse) {
+        const basicUser: Partial<User> = { // Use Partial<User> as we might not have full_name etc.
+          id: authUserFromGetUse.id,
+          email: authUserFromGetUse.email,
+          email_confirmed_at: authUserFromGetUse.email_confirmed_at,
+          auth_created_at: authUserFromGetUse.created_at,
+          auth_updated_at: authUserFromGetUse.updated_at,
+        };
         set({
-          user: {
-            id: authUserFromGetUse.id,
-            email: authUserFromGetUse.email,
-          } as User, // Cast to User, but acknowledge it's a partial representation
+          user: basicUser as User, // Cast to User, acknowledging it might be partial
           isAuthenticated: true,
-        })
+        });
       } else {
-        set({ user: null, isAuthenticated: false })
+        set({ user: null, isAuthenticated: false });
       }
     } finally {
       set({ isLoading: false })

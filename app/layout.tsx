@@ -4,6 +4,7 @@ import "./globals.css";
 
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "@/components/providers/authProvider";
+import SiteHeader from "@/components/SiteHeader"; // Import SiteHeader
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -18,10 +19,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning> {/* Added suppressHydrationWarning for potential theme/server mismatches */}
       <body className={inter.className}>
         <AuthProvider>
-          {children}
+          <SiteHeader /> {/* Add SiteHeader here */}
+          <main className="container mx-auto px-4 py-8"> {/* Added a main wrapper for content */}
+            {children}
+          </main>
           <Toaster />
         </AuthProvider>
       </body>
